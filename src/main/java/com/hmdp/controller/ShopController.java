@@ -2,6 +2,8 @@ package com.hmdp.controller;
 
 
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
@@ -31,8 +33,22 @@ public class ShopController {
      * @return 商铺详情数据
      */
     @GetMapping("/{id}")
+    @SentinelResource(value = "queryShopById", blockHandler = "handleShopQueryBlock")
     public Result queryShopById(@PathVariable("id") Long id) {
         return shopService.queryById(id);
+    }
+
+    /**
+     * 限流兜底方法（BlockHandler）
+     * 作用：当 `queryShopById` 被限流拦截时，不直接抛出丑陋的报错页面，而是优雅地返回此方法的结果。
+     * * 注意事项（强制要求）：
+     * 1. 必须是 public 修饰。
+     * 2. 返回值类型必须与原方法（Result）完全一致。
+     * 3. 方法参数必须与原方法完全一致，并且在最后面额外追加一个 BlockException 类型的参数。
+     */
+    public Result handleShopQueryBlock(@PathVariable("id") Long id, BlockException ex) {
+        // 返回优雅的提示信息给前端
+        return Result.fail("当前访问商户的人数过多，系统繁忙，请稍后再试！");
     }
 
     /**

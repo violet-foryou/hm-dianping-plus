@@ -8,6 +8,15 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
     username: root
     password: 858518
+  cloud:
+    sentinel:
+      transport:
+        # 作用：指定我们刚刚在本地启动的 Sentinel Dashboard 控制台的地址和端口
+        dashboard: localhost:8083
+        # 作用：Sentinel 客户端与控制台交互的本地端口，如果8719被占用，会自动+1往后扫描
+        port: 8719
+      # 作用：取消Sentinel的懒加载。默认为true，即只有被请求一次后才会将接口展示在控制台。设为false可以提早注册
+      eager: true
   redis:
     host: 192.168.150.101
     port: 6379

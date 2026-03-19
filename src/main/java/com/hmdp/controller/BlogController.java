@@ -1,6 +1,8 @@
 package com.hmdp.controller;
 
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
@@ -28,8 +30,12 @@ public class BlogController {
     private IBlogService blogService;
 
     @PostMapping
+    @SentinelResource(value = "saveBlog", blockHandler = "handleHotParamBlock")
     public Result saveBlog(@RequestBody Blog blog) {
         return blogService.saveBlog(blog);
+    }
+    public Result handleHotParamBlock(@RequestBody Blog blog, BlockException ex) {
+        return Result.fail("您发布点评的速度太快了，请喝口水休息一下吧！");
     }
 
     @PutMapping("/like/{id}")

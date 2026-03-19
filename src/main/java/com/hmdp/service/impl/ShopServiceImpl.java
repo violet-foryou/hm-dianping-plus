@@ -9,6 +9,8 @@ import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.SystemConstants;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -42,12 +44,19 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private CacheClient cacheClient;
 
+
+    public Shop getShopByIdFromDb(Long id) {
+        // 打印日志，方便测试时观察是否走了数据库
+        System.out.println("⚠️ 缓存未命中，正在查询数据库，商户ID：" + id);
+        // getById(id) 是 MyBatis-Plus 提供的查库方法
+        return  cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+    }
+
     @Override
+    @Cacheable(value = "shopCache", key = "#id")
     public Result queryById(Long id) {
         // 解决缓存穿透
-        Shop shop = cacheClient
-                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
-
+        Shop shop = getShopByIdFromDb(id);
         // 互斥锁解决缓存击穿
         // Shop shop = cacheClient
         //         .queryWithMutex(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
@@ -65,6 +74,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     @Transactional
+    @CacheEvict(value = "shopCache", key = "#shop.id")
     public Result update(Shop shop) {
         Long id = shop.getId();
         if (id == null) {

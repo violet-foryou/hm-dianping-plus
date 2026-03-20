@@ -5,7 +5,7 @@ spring:
     name: hmdp
   datasource:
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/hmdp?useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true&useSSL=false
     username: root
     password: 858518
   cloud:
@@ -29,6 +29,18 @@ spring:
         time-between-eviction-runs: 10s
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  rabbitmq:
+    host: 192.168.150.101
+    port: 5672
+    username: tjxt
+    password: 123321
+    virtual-host: /
+    listener:
+      simple:
+        # 手动 ACK，确保消息不会因为程序异常而丢失
+        acknowledge-mode: manual
+    template:
+      channel-transacted: true # 开启事务特性
 mybatis-plus:
   type-aliases-package: com.hmdp.entity # 别名扫描包
 logging:

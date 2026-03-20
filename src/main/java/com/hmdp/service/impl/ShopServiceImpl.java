@@ -74,7 +74,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     @Transactional
-    @CacheEvict(value = "shopCache", key = "#shop.id")
+//    @CacheEvict(value = "shopCache", key = "#shop.id")
     public Result update(Shop shop) {
         Long id = shop.getId();
         if (id == null) {

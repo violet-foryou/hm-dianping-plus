@@ -1,6 +1,7 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.VoucherOrder;
@@ -12,11 +13,13 @@ import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
@@ -48,6 +51,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RedissonClient redissonClient;
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+    @Resource
+    private RabbitTemplate rabbitTemplate;
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
@@ -188,24 +193,48 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result seckillVoucher(Long voucherId) {
         Long userId = UserHolder.getUser().getId();
         long orderId = redisIdWorker.nextId("order");
-        // 1.执行lua脚本
+
+        // 1. 执行 lua 脚本（Redis 操作不支持普通事务回滚，所以放最前面执行）
         Long result = stringRedisTemplate.execute(
                 SECKILL_SCRIPT,
                 Collections.emptyList(),
-                voucherId.toString(), userId.toString(), String.valueOf(orderId)
+                voucherId.toString(), userId.toString()
         );
         int r = result.intValue();
-        // 2.判断结果是否为0
+
+        // 2. 判断结果是否为0
         if (r != 0) {
-            // 2.1.不为0 ，代表没有购买资格
             return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
         }
-        // 3.返回订单id
+
+        // 3. 构造订单对象
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setId(orderId);
+        voucherOrder.setUserId(userId);
+        voucherOrder.setVoucherId(voucherId);
+
+        try {
+            // 4. 发送 RabbitMQ 事务消息
+            // 注意：因为配置了 RabbitTransactionManager，如果当前方法抛出异常，这根消息会被回滚。
+            rabbitTemplate.convertAndSend("seckill.order.queue", JSON.toJSONString(voucherOrder));
+        } catch (Exception e) {
+            // 记录异常，依靠事务回滚 MQ 消息。
+            // 【注意事项】由于 Redis Lua 脚本不支持回滚，极端情况下这里发消息失败会导致 Redis 库存扣减但没生成订单（少卖）。
+            // 彻底解决此问题通常需要采用本地消息表方案，但采用事务消息已大幅提高了由于本地 JVM 异常带来的可靠性。
+            log.error("发送订单消息失败", e);
+            throw new RuntimeException("下单失败");
+        }
+
+        // 5. 返回订单id
         return Result.ok(orderId);
     }
+
+    // 原本从 Stream 抓取消息的内部类 VoucherOrderHandler 可以整体删除了，交由 RabbitMQ Listener 处理
+}
 
     /*@Override
     public Result seckillVoucher(Long voucherId) {
@@ -408,4 +437,4 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.ok(orderId);
         }
     }*/
-}
+

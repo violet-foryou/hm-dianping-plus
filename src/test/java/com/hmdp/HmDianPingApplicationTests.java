@@ -1,6 +1,12 @@
 package com.hmdp;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.bean.copier.CopyOptions;
+import cn.hutool.core.lang.UUID;
+import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Shop;
+import com.hmdp.entity.User;
+import com.hmdp.service.IUserService;
 import com.hmdp.service.impl.ShopServiceImpl;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisIdWorker;
@@ -11,7 +17,12 @@ import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import javax.annotation.Resource;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -20,8 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
-import static com.hmdp.utils.RedisConstants.SHOP_GEO_KEY;
+import static com.hmdp.utils.RedisConstants.*;
 
 @SpringBootTest
 class HmDianPingApplicationTests {
@@ -40,6 +50,53 @@ class HmDianPingApplicationTests {
 
     private ExecutorService es = Executors.newFixedThreadPool(500);
 
+    @Resource
+    private IUserService userService; // 注入用户服务
+
+
+    @Test
+    void testCreateTokens() throws IOException {
+        // 1. 批量生成 1000 个测试用户并存入数据库 (为了保证手机号不重复，使用 130... 循环生成)
+        List<User> userList = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            User user = new User();
+            // 构造唯一的手机号，例如 13000000000 到 13000000999
+            user.setPhone("190" + String.format("%08d", i+10000));
+            user.setNickName("tester_" + i);
+            userList.add(user);
+        }
+        // 快速存入数据库
+        userService.saveBatch(userList);
+
+        // 2. 为这 1000 个用户生成登录 Token 并存入 Redis 和 文件
+        File file = new File("token.txt");
+        // 如果文件已存在则先删除，保证数据纯净
+        if(file.exists()) file.delete();
+
+        try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
+            for (User user : userList) {
+                // 2.1 随机生成token，作为登录令牌
+                String token = UUID.randomUUID().toString(true);
+
+                // 2.2 将 User 对象转为 HashMap 存储
+                UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+                Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
+                        CopyOptions.create()
+                                .setIgnoreNullValue(true)
+                                .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
+
+                // 2.3 存储到 Redis
+                String tokenKey = LOGIN_USER_KEY + token;
+                stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+                // 设置有效期 (一般项目中设置的是 30分钟或更长)
+                stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
+
+                // 2.4 将生成的 token 写入文件，每行一个
+                writer.println(token);
+            }
+        }
+        System.out.println("✨ 1000个Token已生成并保存至项目根目录下的 token.txt");
+    }
     @Test
     void testIdWorker() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(300);
@@ -108,4 +165,6 @@ class HmDianPingApplicationTests {
         Long count = stringRedisTemplate.opsForHyperLogLog().size("hl2");
         System.out.println("count = " + count);
     }
+
+
 }

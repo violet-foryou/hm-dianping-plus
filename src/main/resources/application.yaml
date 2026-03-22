@@ -8,6 +8,8 @@ spring:
     url: jdbc:mysql://localhost:3306/hmdp?useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true&useSSL=false
     username: root
     password: 858518
+    hikari:
+     maximum-pool-size: 50
   cloud:
     sentinel:
       transport:
@@ -54,3 +56,23 @@ logging:
     com.hmdp: debug
   pattern:
     dateformat: mm:ss.SSS
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # 1. 核心配置：暴露 prometheus 端点。默认情况下，Actuator 出于安全只暴露 health 和 info。
+        # 这里我们加入 prometheus，使得外部可以通过 /actuator/prometheus 访问。
+        include: 'prometheus,health,info'
+  endpoint:
+    prometheus:
+      # 2. 核心配置：启用 prometheus 端点，确保该功能处于开启状态。
+      enabled: true
+    health:
+      # 3. 辅助配置：显示健康检查详情，方便查看数据库、Redis 连接是否正常。
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        # 4. 核心配置：允许将 Micrometer 的指标导出到 Prometheus 注册表。
+        enabled: true

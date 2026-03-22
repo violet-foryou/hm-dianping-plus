@@ -1,13 +1,17 @@
 package com.hmdp.config;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.transaction.RabbitTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 
 @Configuration
 public class RabbitMQConfig {
@@ -67,5 +71,26 @@ public class RabbitMQConfig {
     @Bean
     public RabbitTransactionManager rabbitTransactionManager(ConnectionFactory connectionFactory) {
         return new RabbitTransactionManager(connectionFactory);
+    }
+
+    @Bean
+    public Queue seckillQueue() {
+        return new Queue("seckill.queue");
+    }
+    @Bean
+    public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+        return new RabbitAdmin(connectionFactory);
+    }
+    // 关键操作：使用 Gauge 监控队列深度
+    @Bean
+    public Gauge rabbitMetrics(MeterRegistry registry, RabbitAdmin rabbitAdmin) {
+        // 加上 return，并且把返回值改成 Gauge
+        return Gauge.builder("rabbitmq_queue_size", () -> {
+                    // 1. 动态获取队列当前的 MessageCount
+                    Properties props = rabbitAdmin.getQueueProperties("seckill.queue");
+                    return props != null ? (Integer) props.get("QUEUE_MESSAGE_COUNT") : 0;
+                })
+                .description("秒杀队列当前积压消息数")
+                .register(registry);
     }
 }
